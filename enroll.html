@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Davomat — Firebase Ro'yxatdan O'tish</title>
+<style>
+  body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:#0f172a;color:#f8fafc;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:16px;box-sizing:border-box}
+  .card{background:#1e293b;border:1px solid #334155;border-radius:24px;padding:32px 24px;max-width:420px;width:100%;box-shadow:0 25px 50px -12px rgba(0,0,0,0.5);text-align:center;box-sizing:border-box}
+  .badge{display:inline-flex;align-items:center;gap:6px;background:#312e81;color:#a5b4fc;font-weight:700;padding:6px 16px;border-radius:20px;font-size:14px;margin-bottom:16px}
+  h1{margin:0 0 8px;font-size:24px;color:#fff;font-weight:700}
+  p{color:#94a3b8;font-size:15px;margin:0 0 24px;line-height:1.5}
+  input[type=text]{width:100%;padding:14px;border:1.5px solid #475569;background:#0f172a;color:#fff;border-radius:14px;font-size:16px;box-sizing:border-box;margin-bottom:14px;outline:none}
+  input[type=text]:focus{border-color:#6366f1}
+  .btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:14px;border:0;border-radius:14px;font-size:16px;font-weight:600;cursor:pointer;margin-bottom:14px;box-sizing:border-box;transition:all .2s}
+  .primary{background:#4f46e5;color:#fff}
+  .primary:disabled{background:#475569;cursor:not-allowed}
+  .ghost{background:#334155;color:#f8fafc;border:1px dashed #64748b}
+  img{max-width:100%;max-height:260px;border-radius:16px;margin-bottom:14px;object-fit:cover}
+  #status{font-size:15px;text-align:center;color:#f87171;margin-top:8px;white-space:pre-wrap;font-weight:500}
+  .success{color:#34d399 !important}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="badge">🔥 Firebase Online</div>
+  <h1>Ro'yxatdan o'tish</h1>
+  <p>Tizimga kirish uchun ism-familiyangizni kiriting va yuzingiz aniq ko'ringan rasm yuklang</p>
+
+  <input type="text" id="name" placeholder="Ism familiya" autocomplete="off">
+
+  <input type="file" id="cameraInput" accept="image/*" capture="user" style="display:none">
+  <input type="file" id="fileInput" accept="image/*" style="display:none">
+
+  <button class="btn ghost" id="btnCamera">📷 Kamerani ochish</button>
+  <button class="btn ghost" id="btnFile">📁 Galereyadan tanlash</button>
+
+  <img id="preview" style="display:none">
+
+  <button class="btn primary" id="btnSubmit" disabled>Yuborish</button>
+  <div id="status"></div>
+</div>
+
+<script>
+  const urlParams = new URLSearchParams(window.location.search);
+  const groupId = urlParams.get('g') || '1';
+  const dbUrl = urlParams.get('db') || 'https://davomat-app-default-rtdb.firebaseio.com';
+
+  let photoBase64 = '';
+
+  const nameInput = document.getElementById('name');
+  const btnCamera = document.getElementById('btnCamera');
+  const btnFile = document.getElementById('btnFile');
+  const cameraInput = document.getElementById('cameraInput');
+  const fileInput = document.getElementById('fileInput');
+  const preview = document.getElementById('preview');
+  const btnSubmit = document.getElementById('btnSubmit');
+  const status = document.getElementById('status');
+
+  btnCamera.onclick = () => cameraInput.click();
+  btnFile.onclick = () => fileInput.click();
+
+  cameraInput.onchange = (e) => handleFile(e.target.files[0]);
+  fileInput.onchange = (e) => handleFile(e.target.files[0]);
+
+  function handleFile(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let w = img.width, h = img.height;
+        const max = 1000;
+        if (w > max || h > max) {
+          if (w > h) { h = Math.round(h * max / w); w = max; }
+          else { w = Math.round(w * max / h); h = max; }
+        }
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        photoBase64 = canvas.toDataURL('image/jpeg', 0.85);
+        preview.src = photoBase64;
+        preview.style.display = 'block';
+        checkValid();
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  nameInput.oninput = checkValid;
+
+  function checkValid() {
+    btnSubmit.disabled = !(nameInput.value.trim().length >= 2 && photoBase64);
+  }
+
+  btnSubmit.onclick = async () => {
+    btnSubmit.disabled = true;
+    status.className = '';
+    status.innerText = 'Yuborilmoqda…';
+
+    try {
+      const payload = {
+        name: nameInput.value.trim(),
+        photo: photoBase64,
+        timestamp: Date.now()
+      };
+
+      const res = await fetch(`${dbUrl}/enrollments/${groupId}.json`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok) {
+        status.className = 'success';
+        status.innerText = '✅ Muvaffaqiyatli yuborildi!';
+        nameInput.value = '';
+        photoBase64 = '';
+        preview.style.display = 'none';
+      } else {
+        status.innerText = 'Xatolik yuz berdi. Qayta urinib ko\'ring.';
+        btnSubmit.disabled = false;
+      }
+    } catch (err) {
+      status.innerText = 'Tarmoq xatosi: ' + err.message;
+      btnSubmit.disabled = false;
+    }
+  };
+</script>
+</body>
+</html>
